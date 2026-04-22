@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Number Checker - Scanner Tool</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div class="hacker-container">
+        
+        <header class="header">
+            <h1><span class="glitch" data-text="WhatsApp Scanner">WhatsApp Scanner</span> <span class="blink">_</span></h1>
+            <div class="status-box">
+                Status: <span id="wa-status" class="status-disconnected">DISCONNECTED</span>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Left Panel (Login & Input) -->
+            <div class="panel left-panel">
+                <div class="card qr-card" id="qr-section">
+                    <h2><span class="ico">»</span> Authentication</h2>
+                    <div class="qr-wrapper">
+                        <img id="qrcode" src="" alt="Waiting for QR..." style="display: none;">
+                        <div id="qr-loading" class="spinner-ui"></div>
+                    </div>
+                    <p class="sys-msg">Waiting for WhatsApp Engine...</p>
+                    <button id="btn-logout" class="btn-secondary" style="margin-top: 15px; width: 100%;">[ RESET_SESSION ]</button>
+                </div>
+
+                <div class="card input-card">
+                    <h2><span class="ico">»</span> Target Input</h2>
+                    <div class="tab-buttons">
+                        <button class="tab-btn active" data-tab="single">Single Mode</button>
+                        <button class="tab-btn" data-tab="bulk">Bulk Mode</button>
+                    </div>
+
+                    <!-- Single Input -->
+                    <div id="single-form" class="form-container active">
+                        <input type="text" id="single-number" class="hacker-input" placeholder="e.g. 08123456789 or 62812...">
+                        <button id="btn-check-single" class="btn-primary">[ EXECUTE_CHECK ]</button>
+                    </div>
+
+                    <!-- Bulk Input -->
+                    <div id="bulk-form" class="form-container">
+                        <textarea id="bulk-numbers" class="hacker-textarea" placeholder="Paste numbers here...&#10;0812xxxxxx&#10;6281xxxxxx&#10;+628xxxxxx"></textarea>
+                        <button id="btn-check-bulk" class="btn-primary">[ EXECUTE_BATCH ]</button>
+                    </div>
+
+                    <!-- Progress Bar (Waiting Line) -->
+                    <div id="progress-container" style="display: none; margin-top: 15px;">
+                        <span id="progress-text" style="font-size: 0.8rem; color: var(--primary-color);">Processing...</span>
+                        <div style="width: 100%; height: 4px; background: #222; margin-top: 5px; border-radius: 2px; overflow: hidden;">
+                            <div id="progress-bar" style="width: 0%; height: 100%; background: var(--primary-color); transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel (Terminal Log) -->
+            <div class="panel right-panel">
+                <div class="card terminal-card">
+                    <div class="terminal-header">
+                        <span>root@scanwa:~# system_logs</span>
+                    </div>
+                    <div class="terminal-body" id="logs-container">
+                        <!-- Logs will appear here -->
+                        <div class="log-line info">Booting system...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Result Panels -->
+        <div class="result-panels" style="margin-top: 30px;">
+            <div class="main-content" style="gap: 30px;">
+                <!-- Active Numbers -->
+                <div class="card" style="border-color: #00ffff;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                        <h2 style="color: #00ffff; margin: 0;"><span class="ico">✅</span> AKTIF (<span id="active-count">0</span>)</h2>
+                        <button class="btn-copy" id="btn-copy-active">[ COPY ]</button>
+                    </div>
+                    <textarea id="active-list" class="hacker-textarea" style="height: 180px; font-size: 0.85rem; background: #001a1a; cursor: text;" readonly placeholder="Nomor aktif akan terkumpul di sini..."></textarea>
+                </div>
+
+                <!-- Inactive Numbers -->
+                <div class="card" style="border-color: var(--error-color);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                        <h2 style="color: var(--error-color); margin: 0;"><span class="ico">❌</span> TIDAK AKTIF (<span id="inactive-count">0</span>)</h2>
+                        <button class="btn-copy" id="btn-copy-inactive">[ COPY ]</button>
+                    </div>
+                    <textarea id="inactive-list" class="hacker-textarea" style="height: 180px; font-size: 0.85rem; background: #1a0000; cursor: text;" readonly placeholder="Nomor tidak aktif akan terkumpul di sini..."></textarea>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
