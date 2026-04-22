@@ -36,7 +36,7 @@ io.on('connection', (socket) => {
     if (!clientId) return;
 
     socket.join(clientId);
-    console.log(`[SOCKET] Client connected: ${clientId}`);
+    // console.log(`[SOCKET] Client connected: ${clientId}`);
 
     const session = sessions.get(clientId);
     if (session) {
@@ -137,14 +137,14 @@ async function connectToWhatsApp(clientId) {
                     io.to(clientId).emit('qr', qrUrl);
                 }
             } catch (err) {
-                console.error('Failed to generate QR data url', err);
+                // console.error('Failed to generate QR data url', err);
             }
         }
 
         if (connection === 'close') {
             updateStatus(clientId, 'disconnected');
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`[${clientId}] Koneksi terputus. Reconnecting: ${shouldReconnect}`);
+            // console.log(`[${clientId}] Koneksi terputus. Reconnecting: ${shouldReconnect}`);
             sendLog(clientId, `Koneksi terputus. Reconnecting: ${shouldReconnect}`, 'error');
             
             if (shouldReconnect) {
@@ -173,7 +173,6 @@ async function connectToWhatsApp(clientId) {
                 session.currentQR = null;
                 io.to(clientId).emit('qr', null);
             }
-            spinner.succeed(`[${clientId}] WhatsApp terhubung!`);
         }
     });
 
@@ -231,7 +230,7 @@ app.post('/check', async (req, res) => {
             res.json({ exists: false, jid: null, number: number });
         }
     } catch (error) {
-        console.error(error);
+        // console.error(error);
         sendLog(clientId, `[SATUAN] Error cek ${number}`, 'error');
         res.status(500).json({ status: false, message: 'Server error check WhatsApp' });
     }
@@ -303,7 +302,7 @@ app.post('/logout', async (req, res) => {
         const sessionPath = path.join(__dirname, '../sessions', clientId);
         if (fs.existsSync(sessionPath)) {
             fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log(`[${clientId}] Session deleted.`);
+            // console.log(`[${clientId}] Session deleted.`);
         }
 
         res.json({ status: true, message: 'Logged out successfully' });
@@ -312,7 +311,7 @@ app.post('/logout', async (req, res) => {
         setTimeout(() => connectToWhatsApp(clientId), 1500);
 
     } catch (error) {
-        console.error('Logout error:', error);
+        // console.error('Logout error:', error);
         res.status(500).json({ status: false, message: 'Failed to logout' });
     }
 });
@@ -330,14 +329,14 @@ app.post('/init', (req, res) => {
 // Start Server
 const PORT = process.env.PORT || 3005;
 server.listen(PORT, async () => {
-    console.log(`\x1b[36m[*] Server running at http://localhost:${PORT}\x1b[0m`);
+    // console.log(`\x1b[36m[*] Server running at http://localhost:${PORT}\x1b[0m`);
     
     // Auto-reconnect existing sessions
     const sessionsDir = path.join(__dirname, '../sessions');
     if (fs.existsSync(sessionsDir)) {
         const dirs = fs.readdirSync(sessionsDir);
         for (const clientId of dirs) {
-            console.log(`[*] Restoring session: ${clientId}`);
+            // console.log(`[*] Restoring session: ${clientId}`);
             connectToWhatsApp(clientId);
         }
     }
