@@ -100,7 +100,7 @@ function updateStatus(clientId, status) {
 async function connectToWhatsApp(clientId) {
     if (!clientId) return;
     
-    spinner.info(`[${clientId}] Menghubungkan ke WhatsApp...`);
+    // spinner.info(`[${clientId}] Menghubungkan ke WhatsApp...`);
     
     const sessionDir = path.join(__dirname, '../sessions', clientId);
     if (!fs.existsSync(sessionDir)) {
@@ -128,7 +128,7 @@ async function connectToWhatsApp(clientId) {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            spinner.info(`[${clientId}] Generate QR Code...`);
+            // spinner.info(`[${clientId}] Generate QR Code...`);
             try {
                 const qrUrl = await QRCode.toDataURL(qr);
                 const session = sessions.get(clientId);
@@ -294,7 +294,7 @@ app.post('/logout', async (req, res) => {
             try {
                 session.sock.end();
             } catch (e) {
-                console.log('Error ending socket:', e.message);
+                // console.log('Error ending socket:', e.message);
             }
             session.sock = null;
         }
