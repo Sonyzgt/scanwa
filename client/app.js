@@ -35,17 +35,26 @@ const btnCheckSingle = document.getElementById('btn-check-single');
 const singleNumber = document.getElementById('single-number');
 
 const btnCheckBulk = document.getElementById('btn-check-bulk');
+const btnStopBulk = document.getElementById('btn-stop-bulk');
 const bulkNumbers = document.getElementById('bulk-numbers');
+const fileUpload = document.getElementById('file-upload');
+const fileNameDisplay = document.getElementById('file-name');
 
 // UI Elements (Results)
 const activeList = document.getElementById('active-list');
+const businessList = document.getElementById('business-list');
 const inactiveList = document.getElementById('inactive-list');
+
 const activeCount = document.getElementById('active-count');
+const businessCount = document.getElementById('business-count');
 const inactiveCount = document.getElementById('inactive-count');
+
 const btnCopyActive = document.getElementById('btn-copy-active');
+const btnCopyBusiness = document.getElementById('btn-copy-business');
 const btnCopyInactive = document.getElementById('btn-copy-inactive');
 
 let countActive = 0;
+let countBusiness = 0;
 let countInactive = 0;
 let totalChecks = 0;
 let currentChecks = 0;
@@ -100,7 +109,7 @@ socket.on('log', (data) => {
 });
 
 socket.on('check_result', (data) => {
-    addResult(data.number, data.exists);
+    addResult(data);
     
     // Update progress bar tracking if tracking bulk
     if (totalChecks > 0) {
@@ -110,18 +119,28 @@ socket.on('check_result', (data) => {
         progressText.textContent = `Checking ${currentChecks} / ${totalChecks}...`;
         if (currentChecks >= totalChecks) {
             setTimeout(() => { progressContainer.style.display = 'none'; }, 1000);
+            btnStopBulk.style.display = 'none';
             totalChecks = 0;
         }
     }
 });
 
 // Result Output Helper
-function addResult(number, isActive) {
-    if (isActive) {
-        activeList.value += (activeList.value ? '\n' : '') + number;
-        countActive++;
-        activeCount.textContent = countActive;
-        activeList.scrollTop = activeList.scrollHeight;
+function addResult(data) {
+    const { number, exists, bio, isBusiness, isVerified } = data;
+    
+    if (exists) {
+        if (isBusiness) {
+            businessList.value += (businessList.value ? '\n' : '') + number;
+            countBusiness++;
+            businessCount.textContent = countBusiness;
+            businessList.scrollTop = businessList.scrollHeight;
+        } else {
+            activeList.value += (activeList.value ? '\n' : '') + number;
+            countActive++;
+            activeCount.textContent = countActive;
+            activeList.scrollTop = activeList.scrollHeight;
+        }
     } else {
         inactiveList.value += (inactiveList.value ? '\n' : '') + number;
         countInactive++;
@@ -137,6 +156,14 @@ btnCopyActive.addEventListener('click', () => {
     const originalText = btnCopyActive.textContent;
     btnCopyActive.textContent = '[ COPIED! ]';
     setTimeout(() => btnCopyActive.textContent = originalText, 2000);
+});
+
+btnCopyBusiness.addEventListener('click', () => {
+    if (!businessList.value) return;
+    navigator.clipboard.writeText(businessList.value);
+    const originalText = btnCopyBusiness.textContent;
+    btnCopyBusiness.textContent = '[ COPIED! ]';
+    setTimeout(() => btnCopyBusiness.textContent = originalText, 2000);
 });
 
 btnCopyInactive.addEventListener('click', () => {
@@ -191,6 +218,7 @@ btnCheckBulk.addEventListener('click', async () => {
     progressContainer.style.display = 'block';
     progressBar.style.width = '0%';
     progressText.textContent = `Checking 0 / ${totalChecks}...`;
+    btnStopBulk.style.display = 'block';
     
     try {
         const res = await fetch('/check-bulk', {
@@ -208,9 +236,74 @@ btnCheckBulk.addEventListener('click', async () => {
             // Results are added real-time via socket check_result
         }
     } catch (err) {
-        alert('Terjadi kesalahan atau koneksi terputus. Tetapi sistem mungkin masih memproses di background, cek log.');
+        alert('Terjadi kesalahan atau koneksi terputus.');
+    } finally {
+        btnStopBulk.style.display = 'none';
     }
-    // We don't hide the progress bar here in finally because the socket event handles it
+});
+
+// Stop Handler
+btnStopBulk.addEventListener('click', async () => {
+    btnStopBulk.textContent = '[ STOPPING... ]';
+    btnStopBulk.disabled = true;
+    try {
+        await fetch('/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId })
+        });
+    } catch (err) {
+        console.error('Failed to stop:', err);
+    } finally {
+        btnStopBulk.textContent = '[ STOP ]';
+        btnStopBulk.disabled = false;
+        btnStopBulk.style.display = 'none';
+        progressContainer.style.display = 'none';
+    }
+});
+
+// File Upload Handler
+fileUpload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    fileNameDisplay.textContent = file.name;
+    const reader = new FileReader();
+    
+    reader.onload = (event) => {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // Get first sheet
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // Convert to JSON (array of arrays)
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        // Extract numbers (assuming first column or flatten all)
+        const numbers = [];
+        jsonData.forEach(row => {
+            if (row && row.length > 0) {
+                // Check each cell in the row for a potential number
+                row.forEach(cell => {
+                    const val = String(cell).trim();
+                    if (val && /^[0-9+]+$/.test(val.replace(/[\s-]/g, ''))) {
+                        numbers.push(val);
+                    }
+                });
+            }
+        });
+
+        if (numbers.length > 0) {
+            bulkNumbers.value = numbers.join('\n');
+            alert(`Berhasil mengambil ${numbers.length} nomor dari file.`);
+        } else {
+            alert('Tidak ditemukan nomor di dalam file tersebut.');
+        }
+    };
+    
+    reader.readAsArrayBuffer(file);
 });
 
 // Logout Helper
@@ -232,10 +325,13 @@ btnLogout.addEventListener('click', async () => {
         if (data.status) {
             // Reset UI
             activeList.value = '';
+            businessList.value = '';
             inactiveList.value = '';
             countActive = 0;
+            countBusiness = 0;
             countInactive = 0;
             activeCount.textContent = '0';
+            businessCount.textContent = '0';
             inactiveCount.textContent = '0';
             
             // App state will be updated via socket (status 'disconnected')

@@ -143,16 +143,19 @@ async function connectToWhatsApp(clientId) {
 
         if (connection === 'close') {
             updateStatus(clientId, 'disconnected');
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            // console.log(`[${clientId}] Koneksi terputus. Reconnecting: ${shouldReconnect}`);
-            sendLog(clientId, `Koneksi terputus. Reconnecting: ${shouldReconnect}`, 'error');
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            const reason = lastDisconnect?.error?.message || 'Unknown Reason';
+            
+            sendLog(clientId, `Koneksi terputus: ${reason}. Reconnecting: ${shouldReconnect}`, 'error');
             
             if (shouldReconnect) {
                 // Clear QR on disconnect to avoid confusion
                 const session = sessions.get(clientId);
                 if (session) session.currentQR = null;
                 
-                connectToWhatsApp(clientId);
+                sendLog(clientId, 'Mencoba menyambung kembali dalam 5 detik...', 'info');
+                setTimeout(() => connectToWhatsApp(clientId), 5000);
             } else {
                 sendLog(clientId, 'Sesi Invalid / Logout. Silakan reset sesi.', 'error');
                 // Cleanup session folder if logged out
@@ -221,9 +224,38 @@ app.post('/check', async (req, res) => {
         const [result] = await session.sock.onWhatsApp(jid);
 
         if (result && result.exists) {
-            sendLog(clientId, `[SATUAN] ${number} -> AKTIF`, 'success');
-            io.to(clientId).emit('check_result', { number: number, exists: true });
-            res.json({ exists: true, jid: result.jid, number: number });
+            let bio = null;
+            let business = null;
+            let verified = false;
+
+            try {
+                const status = await session.sock.fetchStatus(jid);
+                bio = status?.status || null;
+            } catch (e) {}
+
+            try {
+                business = await session.sock.getBusinessProfile(jid);
+                if (business) {
+                    // Check for verification
+                    // In Baileys, business profiles might have verifiedLevel
+                    // 0: Not verified, 1: Verified (sometimes 2/3 for official)
+                    verified = business.verifiedLevel > 0;
+                }
+            } catch (e) {}
+
+            const responseData = { 
+                number: number, 
+                exists: true, 
+                jid: result.jid,
+                bio: bio,
+                isBusiness: !!business,
+                isVerified: verified,
+                businessDetails: business
+            };
+
+            sendLog(clientId, `[SATUAN] ${number} -> AKTIF ${bio ? `(Bio: ${bio})` : ''}`, 'success');
+            io.to(clientId).emit('check_result', responseData);
+            res.json(responseData);
         } else {
             sendLog(clientId, `[SATUAN] ${number} -> TIDAK AKTIF`, 'error');
             io.to(clientId).emit('check_result', { number: number, exists: false });
@@ -251,17 +283,52 @@ app.post('/check-bulk', async (req, res) => {
     sendLog(clientId, `Mulai mengecek batch ${numbers.length} nomor...`, 'info');
     res.socket.setTimeout(0);
     
+    // Reset stop flag for new session
+    session.isStopping = false;
+
     let results = [];
     for (let i = 0; i < numbers.length; i++) {
+        // Check if stop was requested
+        if (session.isStopping) {
+            sendLog(clientId, `Pengecekan dihentikan oleh user. (${i}/${numbers.length} selesai)`, 'error');
+            session.isStopping = false; // Reset for next time
+            break;
+        }
+
         const num = numbers[i];
         try {
             const jid = formatNumber(num);
             const [waReq] = await session.sock.onWhatsApp(jid);
             
             if (waReq && waReq.exists) {
-                results.push({ number: num, exists: true, jid: waReq.jid });
-                sendLog(clientId, `[BATCH ${i+1}/${numbers.length}] ✅ ${num} AKTIF`, 'success');
-                io.to(clientId).emit('check_result', { number: num, exists: true });
+                let bio = null;
+                let business = null;
+                let verified = false;
+
+                try {
+                    const status = await session.sock.fetchStatus(jid);
+                    bio = status?.status || null;
+                } catch (e) {}
+
+                try {
+                    business = await session.sock.getBusinessProfile(jid);
+                    if (business) {
+                        verified = business.verifiedLevel > 0;
+                    }
+                } catch (e) {}
+
+                const resultItem = { 
+                    number: num, 
+                    exists: true, 
+                    jid: waReq.jid,
+                    bio: bio,
+                    isBusiness: !!business,
+                    isVerified: verified
+                };
+
+                results.push(resultItem);
+                sendLog(clientId, `[BATCH ${i+1}/${numbers.length}] ✅ ${num} AKTIF ${bio ? `(Bio: ${bio})` : ''}`, 'success');
+                io.to(clientId).emit('check_result', resultItem);
             } else {
                 results.push({ number: num, exists: false, jid: null });
                 sendLog(clientId, `[BATCH ${i+1}/${numbers.length}] ❌ ${num} TIDAK AKTIF`, 'error');
@@ -278,8 +345,21 @@ app.post('/check-bulk', async (req, res) => {
         }
     }
 
-    sendLog(clientId, `Batch selesai! Total dicek: ${numbers.length}`, 'success');
+    sendLog(clientId, `Batch selesai! Total dicek: ${results.length}`, 'success');
     res.json(results);
+});
+
+app.post('/stop', (req, res) => {
+    const { clientId } = req.body;
+    const session = sessions.get(clientId);
+    
+    if (session) {
+        session.isStopping = true;
+        sendLog(clientId, 'Mengirim perintah STOP...', 'info');
+        res.json({ status: true });
+    } else {
+        res.status(404).json({ status: false, message: 'Session not found' });
+    }
 });
 
 app.post('/logout', async (req, res) => {

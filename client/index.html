@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&display=swap" rel="stylesheet">
     <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
     <div class="hacker-container">
@@ -46,8 +47,16 @@
 
                     <!-- Bulk Input -->
                     <div id="bulk-form" class="form-container">
-                        <textarea id="bulk-numbers" class="hacker-textarea" placeholder="Paste numbers here...&#10;0812xxxxxx&#10;6281xxxxxx&#10;+628xxxxxx"></textarea>
-                        <button id="btn-check-bulk" class="btn-primary">[ EXECUTE_BATCH ]</button>
+                        <div style="margin-bottom: 10px;">
+                            <label for="file-upload" class="btn-copy" style="display: inline-block; cursor: pointer; padding: 10px;">[ UPLOAD EXCEL / CSV ]</label>
+                            <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" style="display: none;">
+                            <span id="file-name" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 10px;">No file chosen</span>
+                        </div>
+                        <textarea id="bulk-numbers" class="hacker-textarea" placeholder="Paste numbers here or upload file...&#10;0812xxxxxx&#10;6281xxxxxx&#10;+628xxxxxx"></textarea>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="btn-check-bulk" class="btn-primary" style="flex: 2;">[ EXECUTE_BATCH ]</button>
+                            <button id="btn-stop-bulk" class="btn-error" style="flex: 1; display: none;">[ STOP ]</button>
+                        </div>
                     </div>
 
                     <!-- Progress Bar (Waiting Line) -->
@@ -76,25 +85,35 @@
 
         <!-- Result Panels -->
         <div class="result-panels" style="margin-top: 30px;">
-            <div class="main-content" style="gap: 30px;">
-                <!-- Active Numbers -->
-                <div class="card" style="border-color: #00ffff;">
+            <div class="result-grid">
+                <!-- Active (Personal) -->
+                <div class="card" style="border-color: #00ff41;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
-                        <h2 style="color: #00ffff; margin: 0;"><span class="ico">✅</span> AKTIF (<span id="active-count">0</span>)</h2>
+                        <h2 style="color: #00ff41; margin: 0;"><span class="ico">👤</span> PERSONAL (<span id="active-count">0</span>)</h2>
                         <button class="btn-copy" id="btn-copy-active">[ COPY ]</button>
                     </div>
-                    <textarea id="active-list" class="hacker-textarea" style="height: 180px; font-size: 0.85rem; background: #001a1a; cursor: text;" readonly placeholder="Nomor aktif akan terkumpul di sini..."></textarea>
+                    <textarea id="active-list" class="hacker-textarea" style="height: 120px; font-size: 0.85rem; background: #001a00; cursor: text;" readonly placeholder="Nomor personal aktif..."></textarea>
                 </div>
 
-                <!-- Inactive Numbers -->
+                <!-- Business -->
+                <div class="card" style="border-color: #ffaa00;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                        <h2 style="color: #ffaa00; margin: 0;"><span class="ico">🏢</span> BISNIS (<span id="business-count">0</span>)</h2>
+                        <button class="btn-copy" id="btn-copy-business">[ COPY ]</button>
+                    </div>
+                    <textarea id="business-list" class="hacker-textarea" style="height: 120px; font-size: 0.85rem; background: #1a1500; cursor: text;" readonly placeholder="Nomor bisnis aktif..."></textarea>
+                </div>
+
+                <!-- Inactive -->
                 <div class="card" style="border-color: var(--error-color);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
                         <h2 style="color: var(--error-color); margin: 0;"><span class="ico">❌</span> TIDAK AKTIF (<span id="inactive-count">0</span>)</h2>
                         <button class="btn-copy" id="btn-copy-inactive">[ COPY ]</button>
                     </div>
-                    <textarea id="inactive-list" class="hacker-textarea" style="height: 180px; font-size: 0.85rem; background: #1a0000; cursor: text;" readonly placeholder="Nomor tidak aktif akan terkumpul di sini..."></textarea>
+                    <textarea id="inactive-list" class="hacker-textarea" style="height: 120px; font-size: 0.85rem; background: #1a0000; cursor: text;" readonly placeholder="Nomor tidak aktif..."></textarea>
                 </div>
             </div>
+
         </div>
 
     </div>
