@@ -39,22 +39,28 @@ const btnStopBulk = document.getElementById('btn-stop-bulk');
 const bulkNumbers = document.getElementById('bulk-numbers');
 const fileUpload = document.getElementById('file-upload');
 const fileNameDisplay = document.getElementById('file-name');
+const scanSpeed = document.getElementById('scan-speed');
+const turboWarning = document.getElementById('turbo-warning');
 
 // UI Elements (Results)
 const activeList = document.getElementById('active-list');
 const businessList = document.getElementById('business-list');
+const linkedList = document.getElementById('linked-list');
 const inactiveList = document.getElementById('inactive-list');
 
 const activeCount = document.getElementById('active-count');
 const businessCount = document.getElementById('business-count');
+const linkedCount = document.getElementById('linked-count');
 const inactiveCount = document.getElementById('inactive-count');
 
 const btnCopyActive = document.getElementById('btn-copy-active');
 const btnCopyBusiness = document.getElementById('btn-copy-business');
+const btnCopyLinked = document.getElementById('btn-copy-linked');
 const btnCopyInactive = document.getElementById('btn-copy-inactive');
 
 let countActive = 0;
 let countBusiness = 0;
+let countLinked = 0;
 let countInactive = 0;
 let totalChecks = 0;
 let currentChecks = 0;
@@ -127,10 +133,23 @@ socket.on('check_result', (data) => {
 
 // Result Output Helper
 function addResult(data) {
-    const { number, exists, bio, isBusiness, isVerified } = data;
+    const { number, exists, bio, isBusiness, isVerified, isLinked, socialLinks } = data;
     
     if (exists) {
-        if (isBusiness) {
+        if (isLinked) {
+            linkedList.value += (linkedList.value ? '\n' : '') + number;
+            countLinked++;
+            linkedCount.textContent = countLinked;
+            linkedList.scrollTop = linkedList.scrollHeight;
+
+            // Also add to business if it is business
+            if (isBusiness) {
+                businessList.value += (businessList.value ? '\n' : '') + number;
+                countBusiness++;
+                businessCount.textContent = countBusiness;
+                businessList.scrollTop = businessList.scrollHeight;
+            }
+        } else if (isBusiness) {
             businessList.value += (businessList.value ? '\n' : '') + number;
             countBusiness++;
             businessCount.textContent = countBusiness;
@@ -164,6 +183,14 @@ btnCopyBusiness.addEventListener('click', () => {
     const originalText = btnCopyBusiness.textContent;
     btnCopyBusiness.textContent = '[ COPIED! ]';
     setTimeout(() => btnCopyBusiness.textContent = originalText, 2000);
+});
+
+btnCopyLinked.addEventListener('click', () => {
+    if (!linkedList.value) return;
+    navigator.clipboard.writeText(linkedList.value);
+    const originalText = btnCopyLinked.textContent;
+    btnCopyLinked.textContent = '[ COPIED! ]';
+    setTimeout(() => btnCopyLinked.textContent = originalText, 2000);
 });
 
 btnCopyInactive.addEventListener('click', () => {
@@ -213,6 +240,7 @@ btnCheckBulk.addEventListener('click', async () => {
     const numbers = rawData.split('\n').map(n => n.trim()).filter(n => n.length > 0);
     if (numbers.length === 0) return alert('List nomor kosong!');
 
+    const speed = scanSpeed.value;
     totalChecks = numbers.length;
     currentChecks = 0;
     progressContainer.style.display = 'block';
@@ -224,7 +252,7 @@ btnCheckBulk.addEventListener('click', async () => {
         const res = await fetch('/check-bulk', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ numbers, clientId })
+            body: JSON.stringify({ numbers, clientId, speed })
         });
         
         const data = await res.json();
@@ -306,6 +334,15 @@ fileUpload.addEventListener('change', (e) => {
     reader.readAsArrayBuffer(file);
 });
 
+// Speed Selector Change Listener
+scanSpeed.addEventListener('change', () => {
+    if (scanSpeed.value === 'turbo') {
+        turboWarning.style.display = 'block';
+    } else {
+        turboWarning.style.display = 'none';
+    }
+});
+
 // Logout Helper
 const btnLogout = document.getElementById('btn-logout');
 btnLogout.addEventListener('click', async () => {
@@ -326,12 +363,15 @@ btnLogout.addEventListener('click', async () => {
             // Reset UI
             activeList.value = '';
             businessList.value = '';
+            linkedList.value = '';
             inactiveList.value = '';
             countActive = 0;
             countBusiness = 0;
+            countLinked = 0;
             countInactive = 0;
             activeCount.textContent = '0';
             businessCount.textContent = '0';
+            linkedCount.textContent = '0';
             inactiveCount.textContent = '0';
             
             // App state will be updated via socket (status 'disconnected')

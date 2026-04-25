@@ -6,6 +6,7 @@
     <title>WhatsApp Number Checker - Scanner Tool</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 </head>
@@ -47,11 +48,22 @@
 
                     <!-- Bulk Input -->
                     <div id="bulk-form" class="form-container">
-                        <div style="margin-bottom: 10px;">
-                            <label for="file-upload" class="btn-copy" style="display: inline-block; cursor: pointer; padding: 10px;">[ UPLOAD EXCEL / CSV ]</label>
-                            <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" style="display: none;">
-                            <span id="file-name" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 10px;">No file chosen</span>
+                        <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <label for="file-upload" class="btn-copy" style="display: inline-block; cursor: pointer; padding: 10px;">[ UPLOAD EXCEL / CSV ]</label>
+                                <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" style="display: none;">
+                                <span id="file-name" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 10px;">No file chosen</span>
+                            </div>
+                            <div class="speed-selector">
+                                <label style="font-size: 0.75rem; color: var(--text-muted); margin-right: 5px;">SPEED:</label>
+                                <select id="scan-speed" class="hacker-select">
+                                    <option value="safe">SAFE (Slow)</option>
+                                    <option value="fast">FAST (10x)</option>
+                                    <option value="turbo">TURBO (100x 🔥)</option>
+                                </select>
+                            </div>
                         </div>
+                        <p id="turbo-warning" style="display:none; color: var(--error-color); font-size: 0.7rem; margin-bottom: 10px;">⚠️ WARNING: Turbo mode uses high parallelism. High risk of account ban!</p>
                         <textarea id="bulk-numbers" class="hacker-textarea" placeholder="Paste numbers here or upload file...&#10;0812xxxxxx&#10;6281xxxxxx&#10;+628xxxxxx"></textarea>
                         <div style="display: flex; gap: 10px;">
                             <button id="btn-check-bulk" class="btn-primary" style="flex: 2;">[ EXECUTE_BATCH ]</button>
@@ -102,6 +114,15 @@
                         <button class="btn-copy" id="btn-copy-business">[ COPY ]</button>
                     </div>
                     <textarea id="business-list" class="hacker-textarea" style="height: 120px; font-size: 0.85rem; background: #1a1500; cursor: text;" readonly placeholder="Nomor bisnis aktif..."></textarea>
+                </div>
+
+                <!-- Linked Accounts -->
+                <div class="card" style="border-color: #0066ff;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                        <h2 style="color: #0066ff; margin: 0;"><span class="ico">🔗</span> LINKED (<span id="linked-count">0</span>)</h2>
+                        <button class="btn-copy" id="btn-copy-linked">[ COPY ]</button>
+                    </div>
+                    <textarea id="linked-list" class="hacker-textarea" style="height: 120px; font-size: 0.85rem; background: #000a1a; cursor: text;" readonly placeholder="Nomor tertaut FB/IG..."></textarea>
                 </div>
 
                 <!-- Inactive -->

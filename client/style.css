@@ -150,10 +150,20 @@ body {
     resize: vertical;
 }
 
-.hacker-input:focus, .hacker-textarea:focus {
+.hacker-input:focus, .hacker-textarea:focus, .hacker-select:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 8px rgba(0, 255, 65, 0.2);
+}
+
+.hacker-select {
+    background: #050505;
+    border: 1px solid var(--border-color);
+    color: var(--primary-color);
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border-radius: 4px;
 }
 
 .btn-primary {
@@ -289,8 +299,14 @@ body {
 
 .result-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 20px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+}
+
+@media (max-width: 1100px) {
+    .result-grid {
+        grid-template-columns: 1fr 1fr;
+    }
 }
 
 @media (max-width: 992px) {

@@ -108,7 +108,16 @@ async function connectToWhatsApp(clientId) {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-    const { version } = await fetchLatestBaileysVersion();
+    
+    let version;
+    try {
+        const result = await fetchLatestBaileysVersion();
+        version = result.version;
+    } catch (err) {
+        // console.error('Failed to fetch latest version, using fallback');
+        version = [2, 3000, 1015901307]; // Robust fallback
+    }
+
     const logger = pino({ level: 'silent' });
 
     let sock = makeWASocket({
@@ -116,7 +125,11 @@ async function connectToWhatsApp(clientId) {
         auth: state,
         printQRInTerminal: false,
         logger,
-        browser: Browsers.macOS('Desktop')
+        browser: Browsers.macOS('Desktop'), // More standard browser ID
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 30000,
+        generateHighQualityLinkPreview: false
     });
 
     // Store socket in session
@@ -144,24 +157,41 @@ async function connectToWhatsApp(clientId) {
         if (connection === 'close') {
             updateStatus(clientId, 'disconnected');
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             const reason = lastDisconnect?.error?.message || 'Unknown Reason';
             
-            sendLog(clientId, `Koneksi terputus: ${reason}. Reconnecting: ${shouldReconnect}`, 'error');
+            // Logic for reconnection
+            let shouldReconnect = true;
+            let delayTime = 5000;
+
+            if (statusCode === DisconnectReason.loggedOut) {
+                shouldReconnect = false;
+                sendLog(clientId, 'Sesi Logout. Silakan scan ulang.', 'error');
+            } else if (statusCode === DisconnectReason.restartRequired) {
+                sendLog(clientId, 'Restart diperlukan, menyambung ulang...', 'info');
+                delayTime = 1000;
+            } else if (statusCode === DisconnectReason.timedOut) {
+                sendLog(clientId, 'Koneksi Timeout, mencoba lagi...', 'error');
+                delayTime = 3000;
+            } else if (statusCode === DisconnectReason.connectionLost) {
+                sendLog(clientId, 'Koneksi Hilang, mencoba lagi...', 'error');
+                delayTime = 5000;
+            } else if (statusCode === 401) { // Unauthorized/Invalid Session
+                shouldReconnect = false;
+                sendLog(clientId, 'Sesi Invalid. Menghapus sesi lama...', 'error');
+                if (fs.existsSync(sessionDir)) {
+                    fs.rmSync(sessionDir, { recursive: true, force: true });
+                }
+            } else {
+                sendLog(clientId, `Koneksi terputus: ${reason} (${statusCode}). Reconnecting...`, 'error');
+            }
             
             if (shouldReconnect) {
                 // Clear QR on disconnect to avoid confusion
                 const session = sessions.get(clientId);
                 if (session) session.currentQR = null;
                 
-                sendLog(clientId, 'Mencoba menyambung kembali dalam 5 detik...', 'info');
-                setTimeout(() => connectToWhatsApp(clientId), 5000);
+                setTimeout(() => connectToWhatsApp(clientId), delayTime);
             } else {
-                sendLog(clientId, 'Sesi Invalid / Logout. Silakan reset sesi.', 'error');
-                // Cleanup session folder if logged out
-                if (fs.existsSync(sessionDir)) {
-                    fs.rmSync(sessionDir, { recursive: true, force: true });
-                }
                 const session = sessions.get(clientId);
                 if (session) {
                     session.sock = null;
@@ -204,8 +234,17 @@ function formatNumber(number) {
     return formatted;
 }
 
-// Random Delay (Speed up: 300ms - 800ms)
-const randomDelay = () => Math.floor(Math.random() * (800 - 300 + 1) + 300);
+// Random Delay Utility
+const randomDelay = (min = 300, max = 800) => Math.floor(Math.random() * (max - min + 1) + min);
+
+// Chunk Array Utility for Batching
+function chunkArray(array, size) {
+    const chunked = [];
+    for (let i = 0; i < array.length; i += size) {
+        chunked.push(array.slice(i, i + size));
+    }
+    return chunked;
+}
 
 // API Endpoints
 
@@ -236,10 +275,24 @@ app.post('/check', async (req, res) => {
             try {
                 business = await session.sock.getBusinessProfile(jid);
                 if (business) {
-                    // Check for verification
-                    // In Baileys, business profiles might have verifiedLevel
-                    // 0: Not verified, 1: Verified (sometimes 2/3 for official)
                     verified = business.verifiedLevel > 0;
+                    
+                    // Logic to detect linked accounts
+                    const socialLinks = {
+                        facebook: business.fb_page || null,
+                        instagram: business.instagram || null
+                    };
+
+                    // Check websites array for FB/IG links if not found in specific fields
+                    if (Array.isArray(business.websites)) {
+                        business.websites.forEach(site => {
+                            if (!socialLinks.facebook && site.includes('facebook.com')) socialLinks.facebook = site;
+                            if (!socialLinks.instagram && site.includes('instagram.com')) socialLinks.instagram = site;
+                        });
+                    }
+                    
+                    business.socialLinks = socialLinks;
+                    business.isLinked = !!(socialLinks.facebook || socialLinks.instagram);
                 }
             } catch (e) {}
 
@@ -250,6 +303,8 @@ app.post('/check', async (req, res) => {
                 bio: bio,
                 isBusiness: !!business,
                 isVerified: verified,
+                isLinked: business?.isLinked || false,
+                socialLinks: business?.socialLinks || null,
                 businessDetails: business
             };
 
@@ -269,7 +324,7 @@ app.post('/check', async (req, res) => {
 });
 
 app.post('/check-bulk', async (req, res) => {
-    const { numbers, clientId } = req.body;
+    const { numbers, clientId, speed = 'safe' } = req.body;
     const session = sessions.get(clientId);
 
     if (!session || session.waStatus !== 'connected' || !session.sock) {
@@ -280,72 +335,112 @@ app.post('/check-bulk', async (req, res) => {
         return res.status(400).json({ status: false, message: 'Numbers strictly requires an array' });
     }
 
-    sendLog(clientId, `Mulai mengecek batch ${numbers.length} nomor...`, 'info');
+    // Configure speed parameters
+    let concurrency = 1;
+    let minDelay = 300;
+    let maxDelay = 800;
+
+    if (speed === 'fast') {
+        concurrency = 5;
+        minDelay = 100;
+        maxDelay = 300;
+    } else if (speed === 'turbo') {
+        concurrency = 20; // High parallelism
+        minDelay = 0;
+        maxDelay = 50;
+    }
+
+    sendLog(clientId, `Mulai batch ${numbers.length} nomor (Speed: ${speed.toUpperCase()})...`, 'info');
     res.socket.setTimeout(0);
-    
-    // Reset stop flag for new session
     session.isStopping = false;
 
     let results = [];
-    for (let i = 0; i < numbers.length; i++) {
-        // Check if stop was requested
+    const chunks = chunkArray(numbers, concurrency);
+
+    for (let i = 0; i < chunks.length; i++) {
         if (session.isStopping) {
-            sendLog(clientId, `Pengecekan dihentikan oleh user. (${i}/${numbers.length} selesai)`, 'error');
-            session.isStopping = false; // Reset for next time
+            sendLog(clientId, `Pengecekan dihentikan.`, 'error');
+            session.isStopping = false;
             break;
         }
 
-        const num = numbers[i];
-        try {
-            const jid = formatNumber(num);
-            const [waReq] = await session.sock.onWhatsApp(jid);
-            
-            if (waReq && waReq.exists) {
-                let bio = null;
-                let business = null;
-                let verified = false;
+        const currentBatch = chunks[i];
+        
+        // Process batch in parallel
+        const batchPromises = currentBatch.map(async (num) => {
+            try {
+                const jid = formatNumber(num);
+                const [waReq] = await session.sock.onWhatsApp(jid);
+                
+                if (waReq && waReq.exists) {
+                    let bio = null;
+                    let business = null;
+                    let verified = false;
 
-                try {
-                    const status = await session.sock.fetchStatus(jid);
-                    bio = status?.status || null;
-                } catch (e) {}
+                    // Optimize: Fetch metadata in parallel too
+                    const metaPromises = [
+                        session.sock.fetchStatus(jid).catch(() => null),
+                        session.sock.getBusinessProfile(jid).catch(() => null)
+                    ];
 
-                try {
-                    business = await session.sock.getBusinessProfile(jid);
+                    const [statusResult, businessResult] = await Promise.all(metaPromises);
+                    bio = statusResult?.status || null;
+                    business = businessResult;
+
                     if (business) {
                         verified = business.verifiedLevel > 0;
+                        const socialLinks = {
+                            facebook: business.fb_page || null,
+                            instagram: business.instagram || null
+                        };
+                        if (Array.isArray(business.websites)) {
+                            business.websites.forEach(site => {
+                                if (!socialLinks.facebook && site.includes('facebook.com')) socialLinks.facebook = site;
+                                if (!socialLinks.instagram && site.includes('instagram.com')) socialLinks.instagram = site;
+                            });
+                        }
+                        business.socialLinks = socialLinks;
+                        business.isLinked = !!(socialLinks.facebook || socialLinks.instagram);
                     }
-                } catch (e) {}
 
-                const resultItem = { 
-                    number: num, 
-                    exists: true, 
-                    jid: waReq.jid,
-                    bio: bio,
-                    isBusiness: !!business,
-                    isVerified: verified
-                };
+                    const resultItem = { 
+                        number: num, 
+                        exists: true, 
+                        jid: waReq.jid,
+                        bio: bio,
+                        isBusiness: !!business,
+                        isVerified: verified,
+                        isLinked: business?.isLinked || false,
+                        socialLinks: business?.socialLinks || null
+                    };
 
-                results.push(resultItem);
-                sendLog(clientId, `[BATCH ${i+1}/${numbers.length}] ✅ ${num} AKTIF ${bio ? `(Bio: ${bio})` : ''}`, 'success');
-                io.to(clientId).emit('check_result', resultItem);
-            } else {
-                results.push({ number: num, exists: false, jid: null });
-                sendLog(clientId, `[BATCH ${i+1}/${numbers.length}] ❌ ${num} TIDAK AKTIF`, 'error');
-                io.to(clientId).emit('check_result', { number: num, exists: false });
+                    sendLog(clientId, `✅ ${num} AKTIF`, 'success');
+                    io.to(clientId).emit('check_result', resultItem);
+                    return resultItem;
+                } else {
+                    io.to(clientId).emit('check_result', { number: num, exists: false });
+                    return { number: num, exists: false, jid: null };
+                }
+            } catch (e) {
+                return { number: num, exists: false, error: true };
             }
-        } catch (e) {
-            results.push({ number: num, exists: false, error: true });
-            sendLog(clientId, `[BATCH ${i+1}/${numbers.length}] 🛑 ${num} ERROR Pengecekan`, 'error');
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        results.push(...batchResults);
+
+        // Progress log every chunk
+        const totalDone = i * concurrency + currentBatch.length;
+        if (totalDone % 50 === 0 || totalDone === numbers.length) {
+            sendLog(clientId, `Progres: ${totalDone}/${numbers.length} selesai.`, 'info');
         }
 
-        if (i < numbers.length - 1) {
-            const waitTime = randomDelay();
-            await delay(waitTime);
+        if (i < chunks.length - 1 && maxDelay > 0) {
+            await delay(randomDelay(minDelay, maxDelay));
         }
     }
 
-    sendLog(clientId, `Batch selesai! Total dicek: ${results.length}`, 'success');
+    sendLog(clientId, `Batch selesai! Total: ${results.length}`, 'success');
     res.json(results);
 });
 
